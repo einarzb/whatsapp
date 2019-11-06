@@ -1,14 +1,53 @@
-var createError = require('http-errors');
-var express = require('express');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
-var cors = require("cors");
+const createError = require('http-errors');
+const express = require('express');
+const fetch = require('node-fetch');
+const redis = require('redis');
+const path = require('path');
+const cookieParser = require('cookie-parser');
+const logger = require('morgan');
+const cors = require("cors");
 
-var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
+const indexRouter = require('./routes/index');
+const usersRouter = require('./routes/users');
 
-var app = express();
+const app = express();
+
+//connect to redis on default port
+const client = redis.createClient(6379);
+
+//echo errors
+client.on('error', (err) => {
+  console.log("Error " + err)
+});
+
+app.get('/photos', (req, res) => {
+  
+  // key to store results in Redis store
+  const photosRedisKey = 'user:photos';
+
+  // Try fetching the result from Redis first in case we have it cached
+  return client.get(photosRedisKey, (err, photos) => {
+      // If that key exists in Redis store
+      if (photos) {
+        return res.json({source:'cache', data:JSON.parse(photos)})
+      } else {
+          // Fetch directly from remote api
+          fetch('https://jsonplaceholder.typicode.com/photos')
+          .then(response => response.json())
+          .then(photos => {
+              // Save the  API response in Redis store,  data expire time in 3600 seconds, it means one hour
+              client.setex(photosRedisKey, 3600, JSON.stringify(photos))
+              // Send JSON response to client
+              return res.json({source:'api', data:photos})
+          })
+          .catch(error => {
+            console.log(error);
+            return res.json(error.toString())
+          })
+       }
+  })
+})
+
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
@@ -40,5 +79,8 @@ app.use(function(err, req, res, next) {
   res.render('error');
 });
 
-
+app.listen(9000,()=>{
+  console.log('Is anyone listening? ', 9000 );
+  
+})
 module.exports = app;
