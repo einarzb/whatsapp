@@ -1,7 +1,8 @@
-const createError = require('http-errors');
 const express = require('express');
 const fetch = require('node-fetch');
 const redis = require('redis');
+
+const createError = require('http-errors');
 const path = require('path');
 const cookieParser = require('cookie-parser');
 const logger = require('morgan');
@@ -10,16 +11,58 @@ const cors = require("cors");
 const indexRouter = require('./routes/index');
 const usersRouter = require('./routes/users');
 
-const app = express();
+const PORT = process.env.PORT || 9000;
 
 //connect to redis on default port
-const client = redis.createClient(6379);
+const REDIS_PORT = process.env.PORT || 6379;
+const client = redis.createClient(REDIS_PORT);
 
-//echo errors
-client.on('error', (err) => {
-  console.log("Error " + err)
-});
+//GO! 
+const app = express();
 
+//cache middleware 
+function cache(req,res,next) {
+  const {username} = req.params;
+  
+  client.get(username, (err, data) => {
+    if (err) throw err;
+
+    if(data !== null) {
+      res.send(setResponse(username, data));
+    } else {
+      next(); //move on
+    }
+  })
+}
+
+async function getRepos (req, res, next) {
+  try {
+    console.log('fetching data.....');
+    const {username} = req.params;
+    const response = await fetch(`https://api.github.com/users/${username}`);
+    const data = await response.json();
+    const repos = data.public_repos;
+
+    //redis
+    client.setex(username, 3600, repos); // key, time, data
+
+   // res.send(data); -- default res
+    res.send(setResponse(username, repos));
+
+  } catch (error) {
+    console.log(error);
+    res.status(500)    
+  }
+}
+
+function setResponse (username, repos) {
+  return `<h2>${username} has ${repos} repos </h2>`;
+}
+
+// fetch data from github api 
+app.get('/repos/:username', cache, getRepos);
+
+// fetch data from photos api
 app.get('/photos', (req, res) => {
   
   // key to store results in Redis store
@@ -79,8 +122,13 @@ app.use(function(err, req, res, next) {
   res.render('error');
 });
 
-app.listen(9000,()=>{
-  console.log('Is anyone listening? ', 9000 );
-  
+//echo redis errors
+client.on('error', (err) => {
+  console.log("Error " + err)
+});
+
+app.listen(PORT,()=>{
+  console.log(`Is anyone listening? ${PORT}` );
 })
+
 module.exports = app;
