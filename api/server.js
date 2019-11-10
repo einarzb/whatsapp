@@ -1,24 +1,34 @@
 const express = require('express');
 const fetch = require('node-fetch');
 const redis = require('redis');
+const session = require('express-session');
 
 const createError = require('http-errors');
 const path = require('path');
 const cookieParser = require('cookie-parser');
 const logger = require('morgan');
-const cors = require("cors");
 
 const indexRouter = require('./routes/index');
 const usersRouter = require('./routes/users');
 
-const PORT = process.env.PORT || 9000;
+const TWO_HOURS = 1000 * 60 * 60 * 2;
+
+const { PORT = 9000,
+        REDIS_PORT = 6379,
+        SESSION_LIFETIME = TWO_HOURS,
+        SESSION_NAME = 'sid',
+        SESSION_SECRET = 'shhh! dont tell anyone our lil secret!'
+} = process.env;
 
 //connect to redis on default port
-const REDIS_PORT = process.env.PORT || 6379;
+let RedisStore = require('connect-redis')(session);
 const client = redis.createClient(REDIS_PORT);
+
+
 
 //GO! 
 const app = express();
+const server = require('http').Server(app);
 
 //cache middleware 
 function cache(req,res,next) {
@@ -96,12 +106,26 @@ app.get('/photos', (req, res) => {
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'jade');
 
-app.use(cors());
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.use(
+  session({
+  name:SESSION_NAME,
+  resave: false,
+  saveUninitialized:false,
+  secret: SESSION_SECRET,
+  store:new RedisStore({ client }),
+  cookie:{
+    maxAge:SESSION_LIFETIME,
+    sameSite:true,
+    secure:true,
+    path:'/'
+  }
+}));
 
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
@@ -122,12 +146,17 @@ app.use(function(err, req, res, next) {
   res.render('error');
 });
 
-//echo redis errors
+// redis 
+client.on('connect', ()=>{
+  console.log('redis client connected');
+})
+
 client.on('error', (err) => {
   console.log("Error " + err)
 });
 
-app.listen(PORT,()=>{
+
+server.listen(PORT,()=>{
   console.log(`Is anyone listening? ${PORT}` );
 })
 
