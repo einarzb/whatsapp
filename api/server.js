@@ -24,8 +24,6 @@ const { PORT = 9000,
 let RedisStore = require('connect-redis')(session);
 const client = redis.createClient(REDIS_PORT);
 
-
-
 //GO! 
 const app = express();
 const server = require('http').Server(app);
@@ -127,6 +125,10 @@ app.use(
   }
 }));
 
+app.use('/login', (req,res) => {
+
+})
+
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
 
@@ -145,6 +147,10 @@ app.use(function(err, req, res, next) {
   res.status(err.status || 500);
   res.render('error');
 });
+
+app.use('*',  (req, res)=> {
+  res.sendFile(path.join(__dirname, '../client/public/', 'index.html'));
+ });
 
 // redis 
 client.on('connect', ()=>{
